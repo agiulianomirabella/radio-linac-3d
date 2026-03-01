@@ -1,0 +1,1856 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Radiotherapy LINAC Collimation (Jaws + MLC + Phase Spaces)</title>
+
+  <!-- Import maps need a shim in some browsers -->
+  <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+
+  <!-- Map bare specifiers like 'three' used inside OrbitControls -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --slider-width: 120px;
+      --control-label-width: 136px;
+      --control-number-width: 37px;
+    }
+    html, body { height: 100%; margin: 0; overflow: hidden; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    #app { display: flex; height: 100vh; width: 100vw; }
+    #panel {
+      width: 630px; min-width: 630px; max-width: 80vw;
+      flex: 0 0 auto;
+      box-sizing: border-box;
+      border-right: 1px solid rgba(255,255,255,0.12);
+      background: #0b0d10;
+      padding: 14px 12px;
+      overflow: auto;
+    }
+    #panelResizeHandle {
+      flex: 0 0 10px;
+      cursor: col-resize;
+      position: relative;
+      background: #07090c;
+      touch-action: none;
+    }
+    #panelResizeHandle::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.18);
+      transition: background 120ms ease;
+    }
+    #panelResizeHandle:hover::before,
+    body.resizing-panel #panelResizeHandle::before {
+      background: rgba(137,196,255,0.95);
+    }
+    body.resizing-panel {
+      user-select: none;
+      cursor: col-resize;
+    }
+    #panel h1 { font-size: 16px; margin: 0 0 10px; }
+    #panel .hint { font-size: 12px; opacity: 0.75; line-height: 1.35; margin-bottom: 10px; }
+    #panel details { border: 1px solid rgba(255,255,255,0.10); border-radius: 10px; padding: 10px; margin: 10px 0; background: rgba(255,255,255,0.03); }
+    #panel summary { cursor: pointer; font-weight: 600; }
+    #panel table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    #panel th, #panel td { font-size: 12px; padding: 6px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    #panel th { text-align: left; opacity: 0.9; }
+    #panel table:not(#leafTable) th:first-child,
+    #panel table:not(#leafTable) td:first-child {
+      width: var(--control-label-width);
+      min-width: var(--control-label-width);
+      white-space: nowrap;
+    }
+    #panel input[type="number"], #panel select {
+      padding: 5px 6px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.95);
+      outline: none;
+    }
+    #panel select {
+      width: 78px;
+    }
+    #panel input[type="number"] {
+      width: var(--control-number-width);
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+    #panel input[type="number"]::-webkit-outer-spin-button,
+    #panel input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    #panel input[type="number"]::placeholder { color: rgba(255,255,255,0.35); }
+    #panel .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+    #panel button {
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.05);
+      color: rgba(255,255,255,0.95);
+      padding: 7px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    #panel button:hover { background: rgba(255,255,255,0.08); }
+    #panel .small { font-size: 12px; opacity: 0.8; }
+    #leafScroll { max-height: 420px; overflow: auto; border-radius: 10px; border: 1px solid rgba(255,255,255,0.10); }
+    #leafScroll table th, #leafScroll table td { border-bottom: 1px solid rgba(255,255,255,0.06); }
+    #viewport { flex: 1; min-width: 0; position: relative; background: #06070a; }
+    #overlay {
+      position: absolute; left: 10px; bottom: 10px;
+      font-size: 12px; padding: 8px 10px; border-radius: 10px;
+      background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12);
+      pointer-events: none;
+      max-width: 46ch;
+    }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .ctrlWrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+    }
+    .geomCtrl {
+      min-width: 290px;
+    }
+    .jawCtrl, .phaseCtrl {
+      min-width: 290px;
+    }
+    .leafCtrl {
+      min-width: 250px;
+    }
+    .ctrlSlider {
+      min-width: 0;
+      width: var(--slider-width);
+    }
+    input[type="range"].geomSlider {
+      accent-color: #93b9ff;
+    }
+    input[type="range"].jawSlider {
+      accent-color: #a1d6ff;
+    }
+    input[type="range"].phaseSlider {
+      accent-color: #8fd4ff;
+    }
+    input[type="range"].leafSlider {
+      accent-color: #7bd3ff;
+    }
+    .ctrlNum {
+      width: var(--control-number-width) !important;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .stepBtn {
+      width: 24px;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 !important;
+      border-radius: 6px !important;
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 700;
+    }
+    .phaseLabel {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    input[type="range"].leafSlider.selected {
+      outline: 2px solid rgba(123,211,255,0.95);
+      outline-offset: 2px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="panel">
+    <h1>3D LINAC Collimation: X/Y jaws + MLC + phase spaces</h1>
+    <div class="hint">
+      <b>Drag</b> to rotate, <b>Shift + drag</b> to translate, <b>wheel</b> to zoom.<br/>
+    </div>
+    <div class="row" style="margin-top:0; margin-bottom:8px;">
+      <button id="btnResetView">Reset view</button>
+    </div>
+
+    <details open>
+      <summary>Y JAWS</summary>
+      <div class="small" style="margin-top:8px; opacity:.8; line-height:1.4">
+        Y jaws geometry and coordinates.
+      </div>
+      <table>
+        <tbody>
+          <tr>
+            <td><b>Y jaws front z</b></td>
+            <td>
+              <div class="geomCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="geom_jy_front_z" data-dir="-1">&lt;</button>
+                <input id="geom_jy_front_z" class="geomSlider ctrlSlider" type="range" min="0" max="120" step="0.05">
+                <button type="button" class="stepBtn" data-target="geom_jy_front_z" data-dir="1">&gt;</button>
+                <input id="geom_jy_front_z_num" class="ctrlNum" type="number" min="0" max="120" step="0.05">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>Y jaws back z</b></td>
+            <td>
+              <div class="geomCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="geom_jy_back_z" data-dir="-1">&lt;</button>
+                <input id="geom_jy_back_z" class="geomSlider ctrlSlider" type="range" min="0" max="120" step="0.05">
+                <button type="button" class="stepBtn" data-target="geom_jy_back_z" data-dir="1">&gt;</button>
+                <input id="geom_jy_back_z_num" class="ctrlNum" type="number" min="0" max="120" step="0.05">
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr><th>Jaw position</th><th>Control</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>+ front</b></td>
+            <td>
+              <div class="jawCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="jy_pf" data-dir="-1">&lt;</button>
+                <input id="jy_pf" class="jawSlider ctrlSlider" type="range" min="-26" max="26" step="0.1">
+                <button type="button" class="stepBtn" data-target="jy_pf" data-dir="1">&gt;</button>
+                <input id="jy_pf_num" class="ctrlNum" type="number" min="-26" max="26" step="0.1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>+ back</b></td>
+            <td>
+              <div class="jawCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="jy_pb" data-dir="-1">&lt;</button>
+                <input id="jy_pb" class="jawSlider ctrlSlider" type="range" min="-26" max="26" step="0.1">
+                <button type="button" class="stepBtn" data-target="jy_pb" data-dir="1">&gt;</button>
+                <input id="jy_pb_num" class="ctrlNum" type="number" min="-26" max="26" step="0.1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>- front</b></td>
+            <td>
+              <div class="jawCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="jy_nf" data-dir="-1">&lt;</button>
+                <input id="jy_nf" class="jawSlider ctrlSlider" type="range" min="-26" max="26" step="0.1">
+                <button type="button" class="stepBtn" data-target="jy_nf" data-dir="1">&gt;</button>
+                <input id="jy_nf_num" class="ctrlNum" type="number" min="-26" max="26" step="0.1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>- back</b></td>
+            <td>
+              <div class="jawCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="jy_nb" data-dir="-1">&lt;</button>
+                <input id="jy_nb" class="jawSlider ctrlSlider" type="range" min="-26" max="26" step="0.1">
+                <button type="button" class="stepBtn" data-target="jy_nb" data-dir="1">&gt;</button>
+                <input id="jy_nb_num" class="ctrlNum" type="number" min="-26" max="26" step="0.1">
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="row">
+        <button id="btnOpenY10">Open Y jaws (±10)</button>
+        <button id="btnCloseY0">Close Y jaws</button>
+      </div>
+    </details>
+
+    <details open>
+      <summary>X JAWS</summary>
+      <div class="small" style="margin-top:8px; opacity:.8; line-height:1.4">
+        X jaws geometry and coordinates.
+      </div>
+      <table>
+        <tbody>
+          <tr>
+            <td><b>X jaws front z</b></td>
+            <td>
+              <div class="geomCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="geom_jx_front_z" data-dir="-1">&lt;</button>
+                <input id="geom_jx_front_z" class="geomSlider ctrlSlider" type="range" min="0" max="120" step="0.005">
+                <button type="button" class="stepBtn" data-target="geom_jx_front_z" data-dir="1">&gt;</button>
+                <input id="geom_jx_front_z_num" class="ctrlNum" type="number" min="0" max="120" step="0.005">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>X jaws back z</b></td>
+            <td>
+              <div class="geomCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="geom_jx_back_z" data-dir="-1">&lt;</button>
+                <input id="geom_jx_back_z" class="geomSlider ctrlSlider" type="range" min="0" max="120" step="0.05">
+                <button type="button" class="stepBtn" data-target="geom_jx_back_z" data-dir="1">&gt;</button>
+                <input id="geom_jx_back_z_num" class="ctrlNum" type="number" min="0" max="120" step="0.05">
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr><th>Jaw position</th><th>Control</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>+ front</b></td>
+            <td>
+              <div class="jawCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="jx_pf" data-dir="-1">&lt;</button>
+                <input id="jx_pf" class="jawSlider ctrlSlider" type="range" min="-26" max="26" step="0.1">
+                <button type="button" class="stepBtn" data-target="jx_pf" data-dir="1">&gt;</button>
+                <input id="jx_pf_num" class="ctrlNum" type="number" min="-26" max="26" step="0.1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>+ back</b></td>
+            <td>
+              <div class="jawCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="jx_pb" data-dir="-1">&lt;</button>
+                <input id="jx_pb" class="jawSlider ctrlSlider" type="range" min="-26" max="26" step="0.1">
+                <button type="button" class="stepBtn" data-target="jx_pb" data-dir="1">&gt;</button>
+                <input id="jx_pb_num" class="ctrlNum" type="number" min="-26" max="26" step="0.1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>- front</b></td>
+            <td>
+              <div class="jawCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="jx_nf" data-dir="-1">&lt;</button>
+                <input id="jx_nf" class="jawSlider ctrlSlider" type="range" min="-26" max="26" step="0.1">
+                <button type="button" class="stepBtn" data-target="jx_nf" data-dir="1">&gt;</button>
+                <input id="jx_nf_num" class="ctrlNum" type="number" min="-26" max="26" step="0.1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>- back</b></td>
+            <td>
+              <div class="jawCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="jx_nb" data-dir="-1">&lt;</button>
+                <input id="jx_nb" class="jawSlider ctrlSlider" type="range" min="-26" max="26" step="0.1">
+                <button type="button" class="stepBtn" data-target="jx_nb" data-dir="1">&gt;</button>
+                <input id="jx_nb_num" class="ctrlNum" type="number" min="-26" max="26" step="0.1">
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="row">
+        <button id="btnOpenX10">Open X jaws (±10)</button>
+        <button id="btnCloseX0">Close X jaws</button>
+      </div>
+    </details>
+
+    <details open>
+      <summary>MLC</summary>
+      <table>
+        <tbody>
+          <tr>
+            <td><b>MLC front z</b></td>
+            <td>
+              <div class="geomCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="geom_mlc_front_z" data-dir="-1">&lt;</button>
+                <input id="geom_mlc_front_z" class="geomSlider ctrlSlider" type="range" min="0" max="120" step="0.1">
+                <button type="button" class="stepBtn" data-target="geom_mlc_front_z" data-dir="1">&gt;</button>
+                <input id="geom_mlc_front_z_num" class="ctrlNum" type="number" min="0" max="120" step="0.1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>MLC thickness</b></td>
+            <td>
+              <div class="geomCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="geom_mlc_thickness" data-dir="-1">&lt;</button>
+                <input id="geom_mlc_thickness" class="geomSlider ctrlSlider" type="range" min="1" max="40" step="0.1">
+                <button type="button" class="stepBtn" data-target="geom_mlc_thickness" data-dir="1">&gt;</button>
+                <input id="geom_mlc_thickness_num" class="ctrlNum" type="number" min="1" max="40" step="0.1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>MLC leaf pairs</b></td>
+            <td>
+              <div class="geomCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="geom_mlc_leaf_pairs" data-dir="-1">&lt;</button>
+                <input id="geom_mlc_leaf_pairs" class="geomSlider ctrlSlider" type="range" min="4" max="80" step="1">
+                <button type="button" class="stepBtn" data-target="geom_mlc_leaf_pairs" data-dir="1">&gt;</button>
+                <input id="geom_mlc_leaf_pairs_num" class="ctrlNum" type="number" min="4" max="80" step="1">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>MLC leaf width</b></td>
+            <td>
+              <div class="geomCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="geom_mlc_leaf_width" data-dir="-1">&lt;</button>
+                <input id="geom_mlc_leaf_width" class="geomSlider ctrlSlider" type="range" min="0.2" max="4" step="0.1">
+                <button type="button" class="stepBtn" data-target="geom_mlc_leaf_width" data-dir="1">&gt;</button>
+                <input id="geom_mlc_leaf_width_num" class="ctrlNum" type="number" min="0.2" max="4" step="0.1">
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="small" style="margin-top:8px; opacity:.85; line-height:1.35">
+        <b>Click + drag</b> across sliders to couple many leaves at once.
+        Start on a coupled leaf to decouple many. Press <b>Esc</b> to clear all coupled leaves.
+      </div>
+
+      <div class="row">
+        <div class="small">Leaf travel axis:</div>
+        <select id="mlcOri">
+          <option value="y">y (move in y, stacked along x)</option>
+          <option value="x">x (move in x, stacked along y)</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <button id="btnLeafOpen">Open all leaves (±5)</button>
+        <button id="btnLeafClose">Close all leaves</button>
+      </div>
+
+      <div id="leafScroll" style="margin-top:10px;">
+        <table id="leafTable">
+          <thead>
+            <tr><th>Pair</th><th>Bank A</th><th>Bank B</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Phase space planes</summary>
+      <div class="small" style="margin-top:8px; opacity:.8">
+        Use each checkbox to show/hide the corresponding phase space.
+        Plane height (<code>z</code>) is controlled independently.
+        We simulate <b>1000</b> particles per plane as light rays from the source. If a ray intersects any jaw/leaf before the plane, it’s blocked.
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Plane</th><th>z</th><th>hits</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <label class="phaseLabel">
+                <input id="ps1_visible" type="checkbox">
+                <b>PS #1</b>
+              </label>
+            </td>
+            <td>
+              <div class="phaseCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="ps1" data-dir="-1">&lt;</button>
+                <input id="ps1" class="phaseSlider ctrlSlider" type="range" min="0" max="120" step="0.1">
+                <button type="button" class="stepBtn" data-target="ps1" data-dir="1">&gt;</button>
+                <input id="ps1_num" class="ctrlNum" type="number" min="0" max="120" step="0.1">
+              </div>
+            </td>
+            <td><span id="ps1hits">—</span></td>
+          </tr>
+          <tr>
+            <td>
+              <label class="phaseLabel">
+                <input id="ps2_visible" type="checkbox">
+                <b>PS #2</b>
+              </label>
+            </td>
+            <td>
+              <div class="phaseCtrl ctrlWrap">
+                <button type="button" class="stepBtn" data-target="ps2" data-dir="-1">&lt;</button>
+                <input id="ps2" class="phaseSlider ctrlSlider" type="range" min="0" max="120" step="0.1">
+                <button type="button" class="stepBtn" data-target="ps2" data-dir="1">&gt;</button>
+                <input id="ps2_num" class="ctrlNum" type="number" min="0" max="120" step="0.1">
+              </div>
+            </td>
+            <td><span id="ps2hits">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+  </div>
+
+  <div id="panelResizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize parameters panel"></div>
+
+  <div id="viewport">
+    <div id="overlay"></div>
+  </div>
+</div>
+
+<script type="module">
+  import * as THREE from "three";
+  import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+  // -------------------------
+  // Fixed value
+  // -------------------------
+  const SOURCE_Z = 0;
+  const DEFAULT_GEOM = {
+    jawsYFrontZ: 28,
+    jawsYBackZ: 35,
+    jawsXFrontZ: 36,
+    jawsXBackZ: 45,
+    mlcFrontZ: 48,
+    mlcThickness: 4,
+    mlcLeafPairs: 60,
+    mlcLeafWidth: 0.25,
+  };
+
+  // Visual extents (diagram scale)
+  const JAW_OUTER = 20;
+  const JAW_SPAN  = 40;
+  const LEAF_OUTER = 20;
+  const LEAF_ROUND = 2.2;
+  const PLANE_HALF = 14;
+  const N_PARTICLES = 50000;
+  const HIT_NOISE_SIGMA = 0.08;
+  const PHASE_PARTICLE_COLOR = 0xff6ff2;
+  const BEAM_CONE_EMISSIVE_COLOR = new THREE.Color(PHASE_PARTICLE_COLOR).multiplyScalar(0.22).getHex();
+
+  // -------------------------
+  // State (user-editable)
+  // -------------------------
+  const state = {
+    mlcOrientation: "y", // "x" or "y"
+    geom: { ...DEFAULT_GEOM },
+    jaws: {
+      x: { pf: 4.5, pb: 6, nf: -4.5, nb: -6 },
+      y: { pf: 4.5, pb: 6, nf: -4.5, nb: -6 }
+    },
+    leaves: Array.from({ length: DEFAULT_GEOM.mlcLeafPairs }, () => ({ A: -4, B: 4 })),
+    phase: { z1: 60, z2: 80, show1: false, show2: false }
+  };
+  // Keep +z as beam direction, but draw it downward on screen so source(z=0) appears above.
+  const VIEW_UP = new THREE.Vector3(0, 0, -1);
+
+  // -------------------------
+  // Scene setup
+  // -------------------------
+  const app = document.getElementById("app");
+  const panel = document.getElementById("panel");
+  const panelResizeHandle = document.getElementById("panelResizeHandle");
+  const viewport = document.getElementById("viewport");
+  const overlay = document.getElementById("overlay");
+  const PANEL_MIN_WIDTH = 300;
+  const VIEWPORT_MIN_WIDTH = 320;
+  const panelResizeState = { active: false, pointerId: null, startX: 0, startWidth: 0 };
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x06070a);
+
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 800);
+  camera.up.copy(VIEW_UP);
+  camera.position.set(160, -160, 170);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  viewport.appendChild(renderer.domElement);
+
+  // Orbit around source with beam axis as +z.
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = false;
+  controls.dampingFactor = 0.06;
+  controls.target.set(0, 0, 34);
+  controls.update();
+
+  controls.enableRotate = true;
+  controls.enableZoom = true;
+  controls.enablePan = false;
+  controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+
+  // Avoid singularities / sudden flips when looking exactly straight up/down
+  controls.minPolarAngle = 0.01;
+  controls.maxPolarAngle = Math.PI - 0.01;
+
+  // Helpful limits (tweak if you want)
+  controls.minDistance = 12;
+  controls.maxDistance = 9000;
+
+  const panState = { active: false, pointerId: null, lastX: 0, lastY: 0 };
+  const _right = new THREE.Vector3();
+  const _up = new THREE.Vector3();
+  const _pan = new THREE.Vector3();
+  const _fitCenter = new THREE.Vector3();
+  const _fitCamPos = new THREE.Vector3();
+  const _centerNdc = new THREE.Vector3();
+  const CANONICAL_CENTER = new THREE.Vector3(0, 0, 34);
+  const CANONICAL_CAMERA_OFFSET = new THREE.Vector3(70, -70, 35);
+  let forceViewFrames = 0;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  dir.position.set(60, 80, 40);
+  scene.add(dir);
+
+  // Root for all LINAC geometry that should translate together.
+  const linacRoot = new THREE.Group();
+  scene.add(linacRoot);
+
+  scene.add(new THREE.AxesHelper(10));
+
+  // Beam axis line (moves with linacRoot).
+  linacRoot.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, -2),
+      new THREE.Vector3(0, 0, 70),
+    ]),
+    new THREE.LineBasicMaterial({ color: 0x6ea8ff, transparent: true, opacity: 0.45 })
+  ));
+
+  // Source marker
+  const source = new THREE.Mesh(
+    new THREE.SphereGeometry(0.7, 22, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffd56a, emissive: 0x221800, metalness: 0.1, roughness: 0.5 })
+  );
+  source.position.set(0, 0, SOURCE_Z);
+  linacRoot.add(source);
+
+  const decorGroup = new THREE.Group();
+  linacRoot.add(decorGroup);
+
+  const sourceHead = new THREE.Mesh(
+    new THREE.CylinderGeometry(8, 10.5, 8, 42),
+    new THREE.MeshStandardMaterial({ color: 0x455264, metalness: 0.55, roughness: 0.4 })
+  );
+  sourceHead.rotation.x = -Math.PI / 2;
+  sourceHead.position.set(0, 0, -4);
+  decorGroup.add(sourceHead);
+
+  // Visual beam cone expanding from source toward +z.
+  const beamCone = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 8, 20, 48, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: PHASE_PARTICLE_COLOR,
+      emissive: BEAM_CONE_EMISSIVE_COLOR,
+      metalness: 0.0,
+      roughness: 0.25,
+      transparent: true,
+      opacity: 0.28,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+  );
+  beamCone.rotation.x = -Math.PI / 2;
+  beamCone.position.set(0, 0, SOURCE_Z + 10);
+  decorGroup.add(beamCone);
+
+  const beamConeRim = new THREE.Mesh(
+    new THREE.TorusGeometry(8, 0.2, 12, 48),
+    new THREE.MeshStandardMaterial({ color: 0x9ac4ff, emissive: 0x132650, metalness: 0.15, roughness: 0.35 })
+  );
+  beamConeRim.position.set(0, 0, SOURCE_Z + 20);
+  decorGroup.add(beamConeRim);
+
+  const CHAMBER_RADIUS = 29;
+  const CHAMBER_BASE_HEIGHT = 56;
+  const CHAMBER_TOP_Z = 5;
+  const CHAMBER_BOTTOM_MARGIN = 5;
+
+  const chamber = new THREE.Mesh(
+    new THREE.CylinderGeometry(CHAMBER_RADIUS, CHAMBER_RADIUS, CHAMBER_BASE_HEIGHT, 64, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0x8d98a6,
+      metalness: 0.35,
+      roughness: 0.45,
+      transparent: true,
+      opacity: 0.10,
+      side: THREE.FrontSide,
+      depthWrite: false,
+    })
+  );
+  chamber.rotation.x = -Math.PI / 2;
+  chamber.position.set(0, 0, CHAMBER_TOP_Z + CHAMBER_BASE_HEIGHT / 2);
+  decorGroup.add(chamber);
+
+  const chamberFrontRing = new THREE.Mesh(
+    new THREE.TorusGeometry(CHAMBER_RADIUS, 0.35, 12, 72),
+    new THREE.MeshStandardMaterial({
+      color: 0xc6d1df,
+      metalness: 0.4,
+      roughness: 0.35,
+      transparent: true,
+      opacity: 0.6,
+      depthWrite: false,
+    })
+  );
+  chamberFrontRing.position.set(0, 0, CHAMBER_TOP_Z);
+  decorGroup.add(chamberFrontRing);
+
+  const chamberBackRing = chamberFrontRing.clone();
+  chamberBackRing.position.set(0, 0, CHAMBER_TOP_Z + CHAMBER_BASE_HEIGHT);
+  decorGroup.add(chamberBackRing);
+
+  const componentsGroup = new THREE.Group();
+  const phaseGroup = new THREE.Group();
+  linacRoot.add(componentsGroup);
+  linacRoot.add(phaseGroup);
+
+  function panLinacByPixels(dx, dy) {
+    const el = renderer.domElement;
+
+    const dist = camera.position.distanceTo(controls.target);
+    const fovRad = THREE.MathUtils.degToRad(camera.fov);
+    const worldPerPixelY = (2 * dist * Math.tan(fovRad / 2)) / el.clientHeight;
+    const worldPerPixelX = worldPerPixelY * camera.aspect;
+
+    camera.updateMatrixWorld(true);
+    _right.setFromMatrixColumn(camera.matrixWorld, 0);
+    _up.setFromMatrixColumn(camera.matrixWorld, 1);
+
+    _pan.copy(_right).multiplyScalar(-dx * worldPerPixelX);
+    _pan.addScaledVector(_up, dy * worldPerPixelY);
+    _pan.z = 0;
+
+    linacRoot.position.add(_pan);
+    controls.target.add(_pan);
+  }
+
+  function centerCameraOnLinac(resetLinacOffset = false) {
+    if (resetLinacOffset) linacRoot.position.set(0, 0, 0);
+
+    _fitCenter.copy(CANONICAL_CENTER).add(linacRoot.position);
+    _fitCamPos.copy(_fitCenter).add(CANONICAL_CAMERA_OFFSET);
+
+    controls.target.copy(_fitCenter);
+    camera.position.copy(_fitCamPos);
+    camera.up.copy(VIEW_UP);
+    camera.lookAt(_fitCenter);
+    camera.zoom = 1;
+    camera.near = 0.1;
+    camera.far = 50000;
+    camera.updateProjectionMatrix();
+
+    controls.minDistance = 12;
+    controls.maxDistance = 20000;
+    controls.update();
+    controls.saveState();
+    forceViewFrames = 45;
+    updateOverlay();
+    renderer.render(scene, camera);
+  }
+
+  function onShiftPanStart(e) {
+    if (e.button !== 0 || !e.shiftKey) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    panState.active = true;
+    panState.pointerId = e.pointerId;
+    panState.lastX = e.clientX;
+    panState.lastY = e.clientY;
+
+    renderer.domElement.setPointerCapture(e.pointerId);
+    controls.enabled = false;
+  }
+
+  function onShiftPanMove(e) {
+    if (!panState.active || e.pointerId !== panState.pointerId) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const dx = e.clientX - panState.lastX;
+    const dy = e.clientY - panState.lastY;
+    panState.lastX = e.clientX;
+    panState.lastY = e.clientY;
+
+    panLinacByPixels(dx, dy);
+    updateOverlay();
+  }
+
+  function onShiftPanEnd(e) {
+    if (!panState.active || e.pointerId !== panState.pointerId) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    panState.active = false;
+    panState.pointerId = null;
+    controls.enabled = true;
+  }
+
+  const dom = renderer.domElement;
+  dom.addEventListener("pointerdown", onShiftPanStart, { capture: true });
+  dom.addEventListener("pointermove", onShiftPanMove, { capture: true });
+  dom.addEventListener("pointerup", onShiftPanEnd, { capture: true });
+  dom.addEventListener("pointercancel", onShiftPanEnd, { capture: true });
+  dom.addEventListener("lostpointercapture", onShiftPanEnd, { capture: true });
+  dom.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    centerCameraOnLinac(true);
+  });
+
+  function getPanelMaxWidth() {
+    const handleWidth = panelResizeHandle.getBoundingClientRect().width;
+    return Math.max(PANEL_MIN_WIDTH, app.clientWidth - VIEWPORT_MIN_WIDTH - handleWidth);
+  }
+
+  function setPanelWidth(widthPx) {
+    const maxWidth = getPanelMaxWidth();
+    const clamped = Math.max(PANEL_MIN_WIDTH, Math.min(widthPx, maxWidth));
+    panel.style.width = `${Math.round(clamped)}px`;
+    return clamped;
+  }
+
+  function onPanelResizeStart(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    panelResizeState.active = true;
+    panelResizeState.pointerId = e.pointerId;
+    panelResizeState.startX = e.clientX;
+    panelResizeState.startWidth = panel.getBoundingClientRect().width;
+    panelResizeHandle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing-panel");
+  }
+
+  function onPanelResizeMove(e) {
+    if (!panelResizeState.active || e.pointerId !== panelResizeState.pointerId) return;
+    e.preventDefault();
+    const deltaX = e.clientX - panelResizeState.startX;
+    const nextWidth = panelResizeState.startWidth + deltaX;
+    const appliedWidth = setPanelWidth(nextWidth);
+    panelResizeState.startX = e.clientX;
+    panelResizeState.startWidth = appliedWidth;
+    resize();
+  }
+
+  function onPanelResizeEnd(e) {
+    if (!panelResizeState.active || e.pointerId !== panelResizeState.pointerId) return;
+    panelResizeState.active = false;
+    panelResizeState.pointerId = null;
+    document.body.classList.remove("resizing-panel");
+  }
+
+  panelResizeHandle.addEventListener("pointerdown", onPanelResizeStart);
+  panelResizeHandle.addEventListener("pointermove", onPanelResizeMove);
+  panelResizeHandle.addEventListener("pointerup", onPanelResizeEnd);
+  panelResizeHandle.addEventListener("pointercancel", onPanelResizeEnd);
+  panelResizeHandle.addEventListener("lostpointercapture", onPanelResizeEnd);
+
+  let built = { jaws: [], leaves: [], phasePlanes: [], phasePoints: [] };
+
+  function getLowestComponentZ() {
+    const g = state.geom;
+    const lowestJawZ = Math.max(g.jawsXFrontZ, g.jawsXBackZ, g.jawsYFrontZ, g.jawsYBackZ);
+    const lowestMlcZ = g.mlcFrontZ + g.mlcThickness;
+    return Math.max(lowestJawZ, lowestMlcZ);
+  }
+
+  function updateChamberBottomFromComponents() {
+    const chamberBottomZ = getLowestComponentZ() + CHAMBER_BOTTOM_MARGIN;
+    const chamberHeight = Math.max(0.001, chamberBottomZ - CHAMBER_TOP_Z);
+
+    chamber.scale.set(1, chamberHeight / CHAMBER_BASE_HEIGHT, 1);
+    chamber.position.z = CHAMBER_TOP_Z + chamberHeight * 0.5;
+    chamberBackRing.position.z = chamberBottomZ;
+  }
+
+  function disposeObject(obj) {
+    if (!obj) return;
+    obj.traverse?.((child) => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+        else child.material.dispose();
+      }
+    });
+  }
+
+  function gaussianRand() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  function makeJawPrism({ axis, side, coordFront, coordBack, zFront, zBack }) {
+    const spanHalf = JAW_SPAN * 0.5;
+    const outer = side > 0 ? JAW_OUTER : -JAW_OUTER;
+
+    const verts = [];
+    const pushV = (x, y, z) => verts.push(x, y, z);
+
+    if (axis === "x") {
+      pushV(coordFront, -spanHalf, zFront);
+      pushV(outer,      -spanHalf, zFront);
+      pushV(outer,       spanHalf, zFront);
+      pushV(coordFront,  spanHalf, zFront);
+
+      pushV(coordBack,  -spanHalf, zBack);
+      pushV(outer,      -spanHalf, zBack);
+      pushV(outer,       spanHalf, zBack);
+      pushV(coordBack,   spanHalf, zBack);
+    } else {
+      pushV(-spanHalf, coordFront, zFront);
+      pushV(-spanHalf, outer,      zFront);
+      pushV( spanHalf, outer,      zFront);
+      pushV( spanHalf, coordFront, zFront);
+
+      pushV(-spanHalf, coordBack,  zBack);
+      pushV(-spanHalf, outer,      zBack);
+      pushV( spanHalf, outer,      zBack);
+      pushV( spanHalf, coordBack,  zBack);
+    }
+
+    const idx = [
+      0,1,2,  0,2,3,
+      4,6,5,  4,7,6,
+      1,5,6,  1,6,2,
+      0,3,7,  0,7,4,
+      0,4,5,  0,5,1,
+      3,2,6,  3,6,7
+    ];
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+    geom.setIndex(idx);
+    geom.computeVertexNormals();
+
+    return new THREE.Mesh(
+      geom,
+      new THREE.MeshStandardMaterial({ color: 0xb7c0cc, metalness: 0.15, roughness: 0.75, transparent: true, opacity: 0.95 })
+    );
+  }
+
+  function mlcOrientationRotationZ(orientation) {
+    return orientation === "y" ? Math.PI / 2 : 0;
+  }
+
+  function makeLeafMesh({ bank, tipPos, stackCenter, orientation }) {
+    const w = state.geom.mlcLeafWidth;
+    const zFrontLocal = 0;
+    const zBackLocal  = state.geom.mlcThickness;
+    const zMidLocal   = 0.5 * (zFrontLocal + zBackLocal);
+
+    const yF = -zFrontLocal;
+    const yB = -zBackLocal;
+    const yM = -zMidLocal;
+
+    let outerX, tipX, bulgeX;
+    if (bank === "A") {
+      outerX = -LEAF_OUTER;
+      tipX   = tipPos;
+      bulgeX = tipX + LEAF_ROUND;
+    } else {
+      outerX =  LEAF_OUTER;
+      tipX   = tipPos;
+      bulgeX = tipX - LEAF_ROUND;
+    }
+
+    const shape = new THREE.Shape();
+    shape.moveTo(outerX, yF);
+    shape.lineTo(outerX, yB);
+    shape.lineTo(tipX,   yB);
+    shape.quadraticCurveTo(bulgeX, yM, tipX, yF);
+    shape.closePath();
+
+    const geom = new THREE.ExtrudeGeometry(shape, {
+      depth: w,
+      bevelEnabled: false,
+      curveSegments: 24,
+      steps: 1,
+    });
+
+    geom.rotateX(-Math.PI / 2);
+    geom.translate(0, -w / 2, 0);
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x7bd3ff,
+      metalness: 0.1,
+      roughness: 0.65,
+      transparent: true,
+      opacity: 0.92,
+    });
+
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(0, 0, state.geom.mlcFrontZ);
+
+    mesh.rotation.z = mlcOrientationRotationZ(orientation);
+    if (orientation === "x") mesh.position.y = stackCenter;
+    else mesh.position.x = stackCenter;
+
+    return mesh;
+  }
+
+  function rebuildComponents() {
+    built.jaws.forEach(m => { componentsGroup.remove(m); disposeObject(m); });
+    built.leaves.forEach(m => { componentsGroup.remove(m); disposeObject(m); });
+    built.jaws = [];
+    built.leaves = [];
+
+    const g = state.geom;
+
+    const jawColorX = new THREE.Color(0xdad4c9);
+    const jawColorY = new THREE.Color(0xc9d6da);
+
+    const jx = state.jaws.x;
+    const jxPos = makeJawPrism({ axis:"x", side:+1, coordFront:jx.pf, coordBack:jx.pb, zFront:g.jawsXFrontZ, zBack:g.jawsXBackZ });
+    const jxNeg = makeJawPrism({ axis:"x", side:-1, coordFront:jx.nf, coordBack:jx.nb, zFront:g.jawsXFrontZ, zBack:g.jawsXBackZ });
+    jxPos.material.color = jawColorX; jxNeg.material.color = jawColorX;
+
+    const jy = state.jaws.y;
+    const jyPos = makeJawPrism({ axis:"y", side:+1, coordFront:jy.pf, coordBack:jy.pb, zFront:g.jawsYFrontZ, zBack:g.jawsYBackZ });
+    const jyNeg = makeJawPrism({ axis:"y", side:-1, coordFront:jy.nf, coordBack:jy.nb, zFront:g.jawsYFrontZ, zBack:g.jawsYBackZ });
+    jyPos.material.color = jawColorY; jyNeg.material.color = jawColorY;
+
+    built.jaws.push(jxPos, jxNeg, jyPos, jyNeg);
+    built.jaws.forEach(m => componentsGroup.add(m));
+
+    const ori = state.mlcOrientation;
+    for (let i = 0; i < g.mlcLeafPairs; i++) {
+      const stackCenter = (i - (g.mlcLeafPairs / 2 - 0.5)) * g.mlcLeafWidth;
+      const { A, B } = state.leaves[i];
+
+      const leafA = makeLeafMesh({ bank:"A", tipPos:A, stackCenter, orientation:ori });
+      const leafB = makeLeafMesh({ bank:"B", tipPos:B, stackCenter, orientation:ori });
+
+      built.leaves.push(leafA, leafB);
+      componentsGroup.add(leafA);
+      componentsGroup.add(leafB);
+    }
+
+    const slab = new THREE.Mesh(
+      new THREE.BoxGeometry(2 * LEAF_OUTER, g.mlcLeafPairs * g.mlcLeafWidth, g.mlcThickness),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.07, wireframe: true })
+    );
+    slab.position.set(0, 0, g.mlcFrontZ + g.mlcThickness / 2);
+    slab.rotation.z = mlcOrientationRotationZ(ori);
+    componentsGroup.add(slab);
+    built.leaves.push(slab);
+
+    updateChamberBottomFromComponents();
+  }
+
+  const RAY_EPS = 1e-6;
+
+  function projectCoordAtZ(coordAtPlane, zPlane, zSample) {
+    const dz = zPlane - SOURCE_Z;
+    if (Math.abs(dz) < RAY_EPS) return coordAtPlane;
+    return coordAtPlane * ((zSample - SOURCE_Z) / dz);
+  }
+
+  function componentOverlapBeforePlane(zPlane, zFront, zBack) {
+    const zMin = Math.min(zFront, zBack);
+    const zMax = Math.max(zFront, zBack);
+    const zStart = Math.max(zMin, SOURCE_Z + RAY_EPS);
+    const zEnd = Math.min(zMax, zPlane - RAY_EPS);
+    if (zEnd <= zStart) return null;
+    return { zStart, zMid: 0.5 * (zStart + zEnd), zEnd };
+  }
+
+  function interpolateAtZ(zSample, zFront, valueFront, zBack, valueBack) {
+    const dz = zBack - zFront;
+    if (Math.abs(dz) < RAY_EPS) return 0.5 * (valueFront + valueBack);
+    const t = (zSample - zFront) / dz;
+    return valueFront + t * (valueBack - valueFront);
+  }
+
+  function isBlockedByJaw(axis, side, coordFront, coordBack, zFront, zBack, xPlane, yPlane, zPlane) {
+    const overlap = componentOverlapBeforePlane(zPlane, zFront, zBack);
+    if (!overlap) return false;
+
+    const spanHalf = JAW_SPAN * 0.5;
+    for (const zSample of [overlap.zStart, overlap.zMid, overlap.zEnd]) {
+      const xAtZ = projectCoordAtZ(xPlane, zPlane, zSample);
+      const yAtZ = projectCoordAtZ(yPlane, zPlane, zSample);
+      const edge = interpolateAtZ(zSample, zFront, coordFront, zBack, coordBack);
+
+      if (axis === "x") {
+        if (Math.abs(yAtZ) > spanHalf) continue;
+        if (side > 0) {
+          if (xAtZ >= edge && xAtZ <= JAW_OUTER) return true;
+        } else {
+          if (xAtZ <= edge && xAtZ >= -JAW_OUTER) return true;
+        }
+      } else {
+        if (Math.abs(xAtZ) > spanHalf) continue;
+        if (side > 0) {
+          if (yAtZ >= edge && yAtZ <= JAW_OUTER) return true;
+        } else {
+          if (yAtZ <= edge && yAtZ >= -JAW_OUTER) return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function getLeafPairIndex(stackCoord, pairCount, leafWidth) {
+    const halfExtent = 0.5 * pairCount * leafWidth;
+    if (stackCoord < -halfExtent || stackCoord > halfExtent) return -1;
+    const raw = Math.floor((stackCoord + halfExtent) / leafWidth);
+    return Math.max(0, Math.min(pairCount - 1, raw));
+  }
+
+  function isBlockedByMlc(xPlane, yPlane, zPlane) {
+    const g = state.geom;
+    const zFront = g.mlcFrontZ;
+    const zBack = g.mlcFrontZ + g.mlcThickness;
+    const overlap = componentOverlapBeforePlane(zPlane, zFront, zBack);
+    if (!overlap) return false;
+
+    const orientation = state.mlcOrientation;
+    for (const zSample of [overlap.zStart, overlap.zMid, overlap.zEnd]) {
+      const xAtZ = projectCoordAtZ(xPlane, zPlane, zSample);
+      const yAtZ = projectCoordAtZ(yPlane, zPlane, zSample);
+
+      const stackCoord = orientation === "x" ? yAtZ : xAtZ;
+      const travelCoord = orientation === "x" ? xAtZ : yAtZ;
+
+      const pairIdx = getLeafPairIndex(stackCoord, g.mlcLeafPairs, g.mlcLeafWidth);
+      if (pairIdx < 0) continue;
+
+      const { A, B } = state.leaves[pairIdx];
+      const blockedByA = travelCoord <= A && travelCoord >= -LEAF_OUTER;
+      const blockedByB = travelCoord >= B && travelCoord <= LEAF_OUTER;
+      if (blockedByA || blockedByB) return true;
+    }
+
+    return false;
+  }
+
+  function isBlockedBeforePhaseSpace(xPlane, yPlane, zPlane) {
+    if (!(zPlane > SOURCE_Z + RAY_EPS)) return false;
+
+    const g = state.geom;
+    const jx = state.jaws.x;
+    const jy = state.jaws.y;
+
+    if (isBlockedByJaw("y", +1, jy.pf, jy.pb, g.jawsYFrontZ, g.jawsYBackZ, xPlane, yPlane, zPlane)) return true;
+    if (isBlockedByJaw("y", -1, jy.nf, jy.nb, g.jawsYFrontZ, g.jawsYBackZ, xPlane, yPlane, zPlane)) return true;
+    if (isBlockedByJaw("x", +1, jx.pf, jx.pb, g.jawsXFrontZ, g.jawsXBackZ, xPlane, yPlane, zPlane)) return true;
+    if (isBlockedByJaw("x", -1, jx.nf, jx.nb, g.jawsXFrontZ, g.jawsXBackZ, xPlane, yPlane, zPlane)) return true;
+    if (isBlockedByMlc(xPlane, yPlane, zPlane)) return true;
+
+    return false;
+  }
+
+  function simulatePhaseSpace(zPlane) {
+    const hits = [];
+
+    for (let i = 0; i < N_PARTICLES; i++) {
+      const x = (Math.random() * 2 - 1) * PLANE_HALF;
+      const y = (Math.random() * 2 - 1) * PLANE_HALF;
+      if (!isBlockedBeforePhaseSpace(x, y, zPlane)) {
+        hits.push(
+          x + gaussianRand() * HIT_NOISE_SIGMA,
+          y + gaussianRand() * HIT_NOISE_SIGMA,
+          zPlane
+        );
+      }
+    }
+    return hits;
+  }
+
+  function rebuildPhaseSpaces() {
+    built.phasePlanes.forEach(m => { phaseGroup.remove(m); disposeObject(m); });
+    built.phasePoints.forEach(p => { phaseGroup.remove(p); disposeObject(p); });
+    built.phasePlanes = [];
+    built.phasePoints = [];
+
+    const planeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.10, side: THREE.DoubleSide });
+    const planeGeom = new THREE.PlaneGeometry(2 * PLANE_HALF, 2 * PLANE_HALF);
+
+    function addPlane(zVal) {
+      const plane = new THREE.Mesh(planeGeom.clone(), planeMat.clone());
+      plane.position.set(0, 0, zVal);
+      phaseGroup.add(plane);
+      built.phasePlanes.push(plane);
+
+      const hits = simulatePhaseSpace(zVal);
+      const ptsGeom = new THREE.BufferGeometry();
+      ptsGeom.setAttribute("position", new THREE.Float32BufferAttribute(hits, 3));
+
+      const pts = new THREE.Points(
+        ptsGeom,
+        new THREE.PointsMaterial({ color: PHASE_PARTICLE_COLOR, size: 0.18, transparent: true, opacity: 0.9, depthWrite: false })
+      );
+      phaseGroup.add(pts);
+      built.phasePoints.push(pts);
+
+      return hits.length;
+    }
+
+    PHASE_SLIDER_META.forEach((meta) => {
+      const hitsEl = document.getElementById(meta.hitsId);
+      if (hitsEl) hitsEl.textContent = "—";
+      if (!state.phase[meta.visibleKey]) return;
+
+      const zVal = Number(state.phase[meta.key]);
+      if (!Number.isFinite(zVal)) return;
+
+      const hitCount = addPlane(zVal);
+      if (hitsEl) hitsEl.textContent = String(hitCount);
+    });
+  }
+
+  let pending = 0;
+  function requestRebuild() {
+    cancelAnimationFrame(pending);
+    pending = requestAnimationFrame(() => {
+      rebuildComponents();
+      rebuildPhaseSpaces();
+      updateOverlay();
+    });
+  }
+
+  function updateOverlay() {
+    const ori = state.mlcOrientation;
+    const jx = state.jaws.x, jy = state.jaws.y;
+    const g = state.geom;
+    const cp = camera.position;
+    const ct = controls.target;
+    const lp = linacRoot.position;
+    _centerNdc.copy(CANONICAL_CENTER).add(lp).project(camera);
+    overlay.innerHTML =
+      `<b>Scene</b><br/>
+       MLC orientation: <code>${ori}</code><br/>
+       X jaws: <code>+(${jx.pf},${jx.pb})</code> <code>-(${jx.nf},${jx.nb})</code> @ z=[${g.jawsXFrontZ},${g.jawsXBackZ}]<br/>
+       Y jaws: <code>+(${jy.pf},${jy.pb})</code> <code>-(${jy.nf},${jy.nb})</code> @ z=[${g.jawsYFrontZ},${g.jawsYBackZ}]<br/>
+       MLC: z=[${g.mlcFrontZ},${g.mlcFrontZ + g.mlcThickness}]<br/>
+       Cam: <code>${cp.x.toFixed(1)}, ${cp.y.toFixed(1)}, ${cp.z.toFixed(1)}</code><br/>
+       Target: <code>${ct.x.toFixed(1)}, ${ct.y.toFixed(1)}, ${ct.z.toFixed(1)}</code><br/>
+       Linac offset: <code>${lp.x.toFixed(1)}, ${lp.y.toFixed(1)}, ${lp.z.toFixed(1)}</code><br/>
+       Center NDC: <code>${_centerNdc.x.toFixed(3)}, ${_centerNdc.y.toFixed(3)}, ${_centerNdc.z.toFixed(3)}</code>`;
+  }
+
+  // ---- UI wiring ----
+  // Leaf slider range (tweak to taste)
+  const LEAF_MIN = -10;
+  const LEAF_MAX =  10;
+  const LEAF_STEP = 0.1;
+  const DISPLAY_DECIMALS = 2;
+  const GEOM_SLIDER_META = [
+    { key: "jawsYFrontZ", id: "geom_jy_front_z", integer: false },
+    { key: "jawsYBackZ", id: "geom_jy_back_z", integer: false },
+    { key: "jawsXFrontZ", id: "geom_jx_front_z", integer: false },
+    { key: "jawsXBackZ", id: "geom_jx_back_z", integer: false },
+    { key: "mlcFrontZ", id: "geom_mlc_front_z", integer: false },
+    { key: "mlcThickness", id: "geom_mlc_thickness", integer: false },
+    { key: "mlcLeafPairs", id: "geom_mlc_leaf_pairs", integer: true },
+    { key: "mlcLeafWidth", id: "geom_mlc_leaf_width", integer: false },
+  ];
+  const JAW_SLIDER_META = [
+    { id: "jx_pf", axis: "x", key: "pf" },
+    { id: "jx_pb", axis: "x", key: "pb" },
+    { id: "jx_nf", axis: "x", key: "nf" },
+    { id: "jx_nb", axis: "x", key: "nb" },
+    { id: "jy_pf", axis: "y", key: "pf" },
+    { id: "jy_pb", axis: "y", key: "pb" },
+    { id: "jy_nf", axis: "y", key: "nf" },
+    { id: "jy_nb", axis: "y", key: "nb" },
+  ];
+  const PHASE_SLIDER_META = [
+    { id: "ps1", key: "z1", visibleId: "ps1_visible", visibleKey: "show1", hitsId: "ps1hits" },
+    { id: "ps2", key: "z2", visibleId: "ps2_visible", visibleKey: "show2", hitsId: "ps2hits" },
+  ];
+
+  const leafUI = {
+    built: false,
+    sliders: { A: [], B: [] },
+    numbers: { A: [], B: [] },
+    coupled: new Set(),
+    pointerOrigin: null,
+  };
+  const leafSelectionDrag = {
+    active: false,
+    pointerId: null,
+    mode: "add",
+    captureEl: null,
+    visited: new Set(),
+  };
+
+  const leafFmt = (v) => (Math.round(v / LEAF_STEP) * LEAF_STEP).toFixed(DISPLAY_DECIMALS);
+  const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+  function quantizeForSlider(slider, rawValue, integer = false) {
+    const min = Number(slider.min);
+    const max = Number(slider.max);
+    const step = Number(slider.step) || 1;
+
+    let v = Number(rawValue);
+    if (!Number.isFinite(v)) return NaN;
+
+    v = clamp(v, min, max);
+    if (integer) return Math.round(v);
+
+    const snapped = min + Math.round((v - min) / step) * step;
+    return Number(clamp(snapped, min, max).toFixed(DISPLAY_DECIMALS));
+  }
+
+  function formatForSliderValue(value, integer = false) {
+    if (integer) return Number(Math.round(value)).toFixed(DISPLAY_DECIMALS);
+    return Number(value).toFixed(DISPLAY_DECIMALS);
+  }
+
+  function syncScalarControlValue(id, value, { allowEmpty = false, integer = false } = {}) {
+    const slider = document.getElementById(id);
+    const number = document.getElementById(`${id}_num`);
+    if (!slider || !number) return;
+
+    if (allowEmpty && value === "") {
+      number.value = "";
+      slider.disabled = true;
+      return;
+    }
+
+    const next = quantizeForSlider(slider, value, integer);
+    if (!Number.isFinite(next)) return;
+
+    const display = formatForSliderValue(next, integer);
+    slider.disabled = false;
+    slider.value = display;
+    number.value = display;
+  }
+
+  function ensureLeafCount(pairCount) {
+    while (state.leaves.length < pairCount) state.leaves.push({ A: -4, B: 4 });
+    if (state.leaves.length > pairCount) state.leaves.length = pairCount;
+  }
+
+  function leafAddCoupled(el) {
+    if (!el) return;
+    leafUI.coupled.add(el);
+    el.classList.add("selected");
+  }
+  function leafRemoveCoupled(el) {
+    if (!el) return;
+    leafUI.coupled.delete(el);
+    el.classList.remove("selected");
+  }
+  function leafClearAllSelection() {
+    for (const el of leafUI.coupled) el.classList.remove("selected");
+    leafUI.coupled.clear();
+  }
+  function leafIsSlider(el) {
+    return el instanceof HTMLInputElement && el.classList.contains("leafSlider");
+  }
+  function leafSetCoupledState(el, shouldCouple) {
+    if (shouldCouple) leafAddCoupled(el);
+    else leafRemoveCoupled(el);
+  }
+  function leafResolvePointerOrigin(clientX, clientY, fallbackEl = null) {
+    const hit = document.elementFromPoint(clientX, clientY);
+    if (leafIsSlider(hit)) {
+      leafUI.pointerOrigin = hit;
+      return hit;
+    }
+    if (leafIsSlider(fallbackEl)) {
+      leafUI.pointerOrigin = fallbackEl;
+      return fallbackEl;
+    }
+    if (leafIsSlider(leafUI.pointerOrigin) && leafUI.pointerOrigin.isConnected) {
+      return leafUI.pointerOrigin;
+    }
+    leafUI.pointerOrigin = null;
+    return null;
+  }
+  function leafUpdateCoupledFromPointer(clientX, clientY, fallbackOrigin = null) {
+    if (leafUI.coupled.size === 0) return;
+    const origin = leafResolvePointerOrigin(clientX, clientY, fallbackOrigin);
+    if (!origin) return;
+    const v = leafValueFromPointer(origin, clientX);
+    if (!Number.isFinite(v)) return;
+    leafApplyValue(v, origin, { applyCoupled: true });
+  }
+  function leafEndSelectionDrag(e = null) {
+    if (!leafSelectionDrag.active) return;
+    if (e && Number.isFinite(e.pointerId) && e.pointerId !== leafSelectionDrag.pointerId) return;
+
+    const captureEl = leafSelectionDrag.captureEl;
+    const pointerId = leafSelectionDrag.pointerId;
+    if (
+      captureEl &&
+      pointerId !== null &&
+      typeof captureEl.hasPointerCapture === "function" &&
+      captureEl.hasPointerCapture(pointerId)
+    ) {
+      captureEl.releasePointerCapture(pointerId);
+    }
+
+    leafSelectionDrag.active = false;
+    leafSelectionDrag.pointerId = null;
+    leafSelectionDrag.captureEl = null;
+    leafSelectionDrag.visited.clear();
+  }
+  function leafApplyDragSelectionAtPoint(clientX, clientY) {
+    if (!leafSelectionDrag.active) return;
+    const hit = document.elementFromPoint(clientX, clientY);
+    if (!leafIsSlider(hit) || leafSelectionDrag.visited.has(hit)) return;
+    leafSelectionDrag.visited.add(hit);
+    leafSetCoupledState(hit, leafSelectionDrag.mode === "add");
+  }
+  function leafStartSelectionDrag(e, origin) {
+    leafEndSelectionDrag();
+    leafSelectionDrag.active = true;
+    leafSelectionDrag.pointerId = e.pointerId;
+    leafSelectionDrag.mode = leafUI.coupled.has(origin) ? "remove" : "add";
+    leafSelectionDrag.captureEl = origin;
+    leafSelectionDrag.visited.clear();
+    leafSelectionDrag.visited.add(origin);
+    leafSetCoupledState(origin, leafSelectionDrag.mode === "add");
+    leafUI.pointerOrigin = origin;
+    if (typeof origin.setPointerCapture === "function") origin.setPointerCapture(e.pointerId);
+    leafApplyDragSelectionAtPoint(e.clientX, e.clientY);
+  }
+
+  function leafSyncControl(bank, idx, v) {
+    const s = leafUI.sliders[bank][idx];
+    const num = leafUI.numbers[bank][idx];
+    if (s) s.value = leafFmt(v);
+    if (num) num.value = leafFmt(v);
+  }
+
+  let suppressLeaf = false;
+
+  function leafSetStateAndUI(el, v) {
+    const bank = el.dataset.bank;
+    const idx = Number(el.dataset.leaf);
+    if (!Number.isFinite(idx)) return;
+
+    state.leaves[idx][bank] = v;
+    const next = leafFmt(v);
+    el.value = next;
+
+    const num = leafUI.numbers[bank][idx];
+    if (num) num.value = next;
+  }
+
+  function leafQuantize(v) {
+    if (!Number.isFinite(v)) return NaN;
+    const snapped = Math.round(v / LEAF_STEP) * LEAF_STEP;
+    return Number(clamp(snapped, LEAF_MIN, LEAF_MAX).toFixed(DISPLAY_DECIMALS));
+  }
+
+  function leafValueFromPointer(slider, clientX) {
+    const rect = slider.getBoundingClientRect();
+    if (!rect.width) return NaN;
+    const t = clamp((clientX - rect.left) / rect.width, 0, 1);
+    const min = Number(slider.min);
+    const max = Number(slider.max);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return NaN;
+    return min + (max - min) * t;
+  }
+
+  function leafApplyValue(v, originEl, { applyCoupled = false } = {}) {
+    const quantized = leafQuantize(v);
+    if (!Number.isFinite(quantized)) return;
+
+    const targets = applyCoupled && leafUI.coupled.size
+      ? Array.from(leafUI.coupled)
+      : [originEl].filter(Boolean);
+    if (!targets.length) return;
+
+    let changed = false;
+    suppressLeaf = true;
+    for (const el of targets) {
+      const bank = el.dataset.bank;
+      const idx = Number(el.dataset.leaf);
+      if (!Number.isFinite(idx)) continue;
+      if (state.leaves[idx][bank] !== quantized) changed = true;
+      leafSetStateAndUI(el, quantized);
+    }
+    suppressLeaf = false;
+
+    if (changed) requestRebuild();
+  }
+
+  function onLeafSliderInput(e) {
+    if (suppressLeaf) return;
+    const el = e.target;
+    if (!(el instanceof HTMLInputElement) || !el.classList.contains("leafSlider")) return;
+
+    leafApplyValue(Number(el.value), el, { applyCoupled: leafUI.coupled.has(el) });
+  }
+
+  function onLeafPointerDown(e) {
+    if (e.button !== 0) return;
+    const el = e.currentTarget;
+    if (!leafIsSlider(el)) return;
+    leafStartSelectionDrag(e, el);
+    e.preventDefault();
+  }
+
+  function onLeafPointerMove(e) {
+    if (leafSelectionDrag.active && e.pointerId === leafSelectionDrag.pointerId) {
+      leafApplyDragSelectionAtPoint(e.clientX, e.clientY);
+      return;
+    }
+    const origin = leafIsSlider(e.currentTarget) ? e.currentTarget : null;
+    leafUpdateCoupledFromPointer(e.clientX, e.clientY, origin);
+  }
+  function onLeafPointerEnd(e) {
+    leafEndSelectionDrag(e);
+  }
+  function onLeafPanelPointerMove(e) {
+    if (leafSelectionDrag.active && e.pointerId === leafSelectionDrag.pointerId) {
+      leafApplyDragSelectionAtPoint(e.clientX, e.clientY);
+      return;
+    }
+    if (leafIsSlider(e.target)) return;
+    leafUpdateCoupledFromPointer(e.clientX, e.clientY);
+  }
+
+  function buildLeafTable() {
+    const pairCount = state.geom.mlcLeafPairs;
+
+    const tbody = document.querySelector("#leafTable tbody");
+    tbody.innerHTML = "";
+
+    leafClearAllSelection();
+    leafUI.sliders.A = new Array(pairCount);
+    leafUI.sliders.B = new Array(pairCount);
+    leafUI.numbers.A = new Array(pairCount);
+    leafUI.numbers.B = new Array(pairCount);
+
+    for (let i = 0; i < pairCount; i++) {
+      const tr = document.createElement("tr");
+
+      const tdPair = document.createElement("td");
+      tdPair.textContent = String(i + 1);
+
+      function makeLeafCell(bank) {
+        const td = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "leafCtrl ctrlWrap";
+
+        const stepDown = document.createElement("button");
+        stepDown.type = "button";
+        stepDown.className = "stepBtn";
+        stepDown.textContent = "<";
+
+        const slider = document.createElement("input");
+        slider.type = "range";
+        slider.min = String(LEAF_MIN);
+        slider.max = String(LEAF_MAX);
+        slider.step = String(LEAF_STEP);
+        slider.className = "leafSlider ctrlSlider";
+        slider.dataset.leaf = String(i);
+        slider.dataset.bank = bank;
+
+        const stepUp = document.createElement("button");
+        stepUp.type = "button";
+        stepUp.className = "stepBtn";
+        stepUp.textContent = ">";
+
+        const num = document.createElement("input");
+        num.type = "number";
+        num.min = String(LEAF_MIN);
+        num.max = String(LEAF_MAX);
+        num.step = String(LEAF_STEP);
+        num.className = "ctrlNum";
+
+        slider.addEventListener("input", onLeafSliderInput);
+        slider.addEventListener("pointerdown", onLeafPointerDown);
+        slider.addEventListener("pointermove", onLeafPointerMove);
+        slider.addEventListener("pointerup", onLeafPointerEnd);
+        slider.addEventListener("pointercancel", onLeafPointerEnd);
+        slider.addEventListener("lostpointercapture", onLeafPointerEnd);
+
+        stepDown.addEventListener("click", () => {
+          const next = leafQuantize(Number(slider.value) - LEAF_STEP);
+          if (!Number.isFinite(next)) return;
+          leafApplyValue(next, slider, { applyCoupled: leafUI.coupled.has(slider) });
+        });
+        stepUp.addEventListener("click", () => {
+          const next = leafQuantize(Number(slider.value) + LEAF_STEP);
+          if (!Number.isFinite(next)) return;
+          leafApplyValue(next, slider, { applyCoupled: leafUI.coupled.has(slider) });
+        });
+        num.addEventListener("input", () => {
+          if (num.value.trim() === "") return;
+          const next = leafQuantize(Number(num.value));
+          if (!Number.isFinite(next)) return;
+          leafApplyValue(next, slider, { applyCoupled: leafUI.coupled.has(slider) });
+        });
+        num.addEventListener("blur", () => {
+          num.value = leafFmt(Number(slider.value));
+        });
+
+        wrap.appendChild(stepDown);
+        wrap.appendChild(slider);
+        wrap.appendChild(stepUp);
+        wrap.appendChild(num);
+        td.appendChild(wrap);
+
+        leafUI.sliders[bank][i] = slider;
+        leafUI.numbers[bank][i] = num;
+
+        return td;
+      }
+
+      tr.appendChild(tdPair);
+      tr.appendChild(makeLeafCell("A"));
+      tr.appendChild(makeLeafCell("B"));
+      tbody.appendChild(tr);
+    }
+
+    if (!leafUI.built) {
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          leafEndSelectionDrag();
+          leafClearAllSelection();
+        }
+      });
+      document.addEventListener("pointerup", onLeafPointerEnd);
+      document.addEventListener("pointercancel", onLeafPointerEnd);
+      panel.addEventListener("pointermove", onLeafPanelPointerMove);
+      leafUI.built = true;
+    }
+  }
+
+  function syncUIFromState() {
+    for (const meta of JAW_SLIDER_META) {
+      syncScalarControlValue(meta.id, state.jaws[meta.axis][meta.key]);
+    }
+
+    for (const meta of GEOM_SLIDER_META) {
+      syncScalarControlValue(meta.id, state.geom[meta.key], { integer: meta.integer });
+    }
+
+    document.getElementById("mlcOri").value = state.mlcOrientation;
+
+    for (const meta of PHASE_SLIDER_META) {
+      syncScalarControlValue(meta.id, state.phase[meta.key]);
+      const visibilityToggle = document.getElementById(meta.visibleId);
+      if (visibilityToggle) visibilityToggle.checked = Boolean(state.phase[meta.visibleKey]);
+    }
+
+    suppressLeaf = true;
+    for (let i = 0; i < state.geom.mlcLeafPairs; i++) {
+      leafSyncControl("A", i, state.leaves[i].A);
+      leafSyncControl("B", i, state.leaves[i].B);
+    }
+    suppressLeaf = false;
+  }
+
+  function wireScalarControl({ id, integer = false, allowEmpty = false, onChange }) {
+    const slider = document.getElementById(id);
+    const number = document.getElementById(`${id}_num`);
+    if (!slider || !number) return;
+
+    function apply(rawValue) {
+      if (allowEmpty && rawValue === "") {
+        slider.disabled = true;
+        number.value = "";
+        onChange("");
+        return;
+      }
+
+      const next = quantizeForSlider(slider, rawValue, integer);
+      if (!Number.isFinite(next)) return;
+
+      const display = formatForSliderValue(next, integer);
+      slider.disabled = false;
+      slider.value = display;
+      number.value = display;
+      onChange(next);
+    }
+
+    slider.addEventListener("input", () => apply(slider.value));
+
+    number.addEventListener("input", () => {
+      const raw = number.value.trim();
+      if (raw === "") {
+        if (allowEmpty) apply("");
+        return;
+      }
+      if (!Number.isFinite(Number(raw))) return;
+      apply(raw);
+    });
+
+    number.addEventListener("blur", () => {
+      const raw = number.value.trim();
+      if (raw === "") {
+        if (allowEmpty) return;
+        number.value = formatForSliderValue(Number(slider.value), integer);
+        return;
+      }
+      if (!Number.isFinite(Number(raw))) {
+        if (slider.disabled) number.value = "";
+        else number.value = formatForSliderValue(Number(slider.value), integer);
+        return;
+      }
+      apply(raw);
+    });
+
+    document.querySelectorAll(`button.stepBtn[data-target="${id}"]`).forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const dir = Number(btn.dataset.dir) >= 0 ? 1 : -1;
+        const step = integer ? 1 : (Number(slider.step) || 1);
+        const base = slider.disabled ? Number(slider.min) : Number(slider.value);
+        apply(String(base + dir * step));
+      });
+    });
+  }
+
+  let uiWired = false;
+  function wireInputsOnce() {
+    if (uiWired) return;
+    uiWired = true;
+
+    JAW_SLIDER_META.forEach((meta) => {
+      wireScalarControl({
+        id: meta.id,
+        onChange: (value) => {
+          state.jaws[meta.axis][meta.key] = value;
+          requestRebuild();
+        },
+      });
+    });
+
+    GEOM_SLIDER_META.forEach((meta) => {
+      wireScalarControl({
+        id: meta.id,
+        integer: meta.integer,
+        onChange: (value) => {
+          if (meta.key === "mlcLeafPairs") {
+            ensureLeafCount(value);
+            state.geom[meta.key] = value;
+            buildLeafTable();
+            syncUIFromState();
+          } else {
+            state.geom[meta.key] = value;
+          }
+          requestRebuild();
+        },
+      });
+    });
+
+    document.getElementById("mlcOri").addEventListener("change", (e) => {
+      state.mlcOrientation = e.target.value;
+      requestRebuild();
+    });
+
+    PHASE_SLIDER_META.forEach((meta) => {
+      wireScalarControl({
+        id: meta.id,
+        onChange: (value) => {
+          state.phase[meta.key] = value;
+          requestRebuild();
+        },
+      });
+
+      const visibilityToggle = document.getElementById(meta.visibleId);
+      if (!visibilityToggle) return;
+      visibilityToggle.addEventListener("change", () => {
+        state.phase[meta.visibleKey] = visibilityToggle.checked;
+        requestRebuild();
+      });
+    });
+
+    document.getElementById("btnOpenX10").addEventListener("click", () => {
+      state.jaws.x = { pf: 10, pb: 10, nf: -10, nb: -10 };
+      syncUIFromState();
+      requestRebuild();
+    });
+
+    document.getElementById("btnCloseX0").addEventListener("click", () => {
+      state.jaws.x = { pf: 0, pb: 0, nf: 0, nb: 0 };
+      syncUIFromState();
+      requestRebuild();
+    });
+
+    document.getElementById("btnOpenY10").addEventListener("click", () => {
+      state.jaws.y = { pf: 10, pb: 10, nf: -10, nb: -10 };
+      syncUIFromState();
+      requestRebuild();
+    });
+
+    document.getElementById("btnCloseY0").addEventListener("click", () => {
+      state.jaws.y = { pf: 0, pb: 0, nf: 0, nb: 0 };
+      syncUIFromState();
+      requestRebuild();
+    });
+
+    document.getElementById("btnLeafOpen").addEventListener("click", () => {
+      for (let i = 0; i < state.geom.mlcLeafPairs; i++) { state.leaves[i].A = -10; state.leaves[i].B = 10; }
+      leafClearAllSelection();
+      syncUIFromState();
+      requestRebuild();
+    });
+
+    document.getElementById("btnLeafClose").addEventListener("click", () => {
+      for (let i = 0; i < state.geom.mlcLeafPairs; i++) { state.leaves[i].A = 0; state.leaves[i].B = 0; }
+      leafClearAllSelection();
+      syncUIFromState();
+      requestRebuild();
+    });
+
+    document.getElementById("btnResetView").addEventListener("click", () => {
+      centerCameraOnLinac(true);
+    });
+  }
+
+  function initUI() {
+    wireInputsOnce();
+    buildLeafTable();
+    syncUIFromState();
+  }
+
+  function resize() {
+    setPanelWidth(panel.getBoundingClientRect().width);
+    const w = Math.max(1, viewport.clientWidth);
+    const h = Math.max(1, viewport.clientHeight);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("load", () => {
+    centerCameraOnLinac(true);
+    requestAnimationFrame(() => centerCameraOnLinac(true));
+    setTimeout(() => centerCameraOnLinac(true), 80);
+  });
+
+  function animate() {
+    requestAnimationFrame(animate);
+    _fitCenter.copy(CANONICAL_CENTER).add(linacRoot.position);
+    controls.target.copy(_fitCenter);
+    if (forceViewFrames > 0) {
+      _fitCamPos.copy(_fitCenter).add(CANONICAL_CAMERA_OFFSET);
+      camera.position.copy(_fitCamPos);
+      camera.lookAt(_fitCenter);
+      camera.updateProjectionMatrix();
+      forceViewFrames -= 1;
+    }
+    controls.update();
+    updateOverlay();
+    renderer.render(scene, camera);
+  }
+
+  initUI();
+  resize();
+  rebuildComponents();
+  rebuildPhaseSpaces();
+  centerCameraOnLinac(true);
+  requestAnimationFrame(() => centerCameraOnLinac(true));
+  updateOverlay();
+  animate();
+</script>
+</body>
+</html>
