@@ -24,6 +24,7 @@
       --slider-width: 120px;
       --control-label-width: 136px;
       --control-number-width: 37px;
+      --bev-panel-width: 300px;
     }
     html, body { height: 100%; margin: 0; overflow: hidden; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
     #app { display: flex; height: 100vh; width: 100vw; }
@@ -110,6 +111,99 @@
     #leafScroll { max-height: 420px; overflow: auto; border-radius: 10px; border: 1px solid rgba(255,255,255,0.10); }
     #leafScroll table th, #leafScroll table td { border-bottom: 1px solid rgba(255,255,255,0.06); }
     #viewport { flex: 1; min-width: 0; position: relative; background: #06070a; }
+    #bevPanel {
+      width: var(--bev-panel-width);
+      min-width: var(--bev-panel-width);
+      max-width: var(--bev-panel-width);
+      flex: 0 0 var(--bev-panel-width);
+      box-sizing: border-box;
+      border-left: 1px solid rgba(255,255,255,0.12);
+      background: #07090d;
+      padding: 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: hidden;
+    }
+    #bevPanel.closed {
+      width: 0;
+      min-width: 0;
+      max-width: 0;
+      flex-basis: 0;
+      border-left: 0;
+      padding: 0;
+    }
+    #bevPanel.closed > * {
+      display: none;
+    }
+    #bevPanel h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    #bevViews {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #bevViews.none-visible,
+    #bevViews.single-visible {
+      justify-content: center;
+    }
+    #bevViews.double-visible {
+      justify-content: flex-start;
+    }
+    #bevEmpty {
+      display: none;
+      text-align: center;
+      opacity: 0.7;
+      line-height: 1.4;
+      padding: 10px;
+    }
+    #bevViews.none-visible #bevEmpty {
+      display: block;
+    }
+    .bevView {
+      display: none;
+      min-height: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    .bevView.visible {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    #bevViews.single-visible .bevView.visible {
+      flex: 0 1 56%;
+      min-height: 220px;
+    }
+    #bevViews.double-visible .bevView.visible {
+      flex: 1 1 0;
+      min-height: 0;
+    }
+    .bevTitle {
+      font-size: 12px;
+      font-weight: 700;
+      opacity: 0.9;
+    }
+    .bevCanvasWrap {
+      flex: 1;
+      min-height: 0;
+    }
+    .bevCanvasWrap canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      border-radius: 0;
+      border: 0;
+      background: #070b11;
+    }
     #overlay {
       position: absolute; left: 10px; bottom: 10px;
       font-size: 12px; padding: 8px 10px; border-radius: 10px;
@@ -498,6 +592,26 @@
   <div id="viewport">
     <div id="overlay"></div>
   </div>
+
+  <aside id="bevPanel" class="closed" aria-label="Beam eye view panel">
+    <h2>Beam Eye View</h2>
+    <div id="bevViews" class="none-visible">
+
+      <section id="bev_ps1" class="bevView">
+        <div class="bevTitle">PS #1</div>
+        <div class="bevCanvasWrap">
+          <canvas id="bev_canvas1"></canvas>
+        </div>
+      </section>
+
+      <section id="bev_ps2" class="bevView">
+        <div class="bevTitle">PS #2</div>
+        <div class="bevCanvasWrap">
+          <canvas id="bev_canvas2"></canvas>
+        </div>
+      </section>
+    </div>
+  </aside>
 </div>
 
 <script type="module">
@@ -553,13 +667,47 @@
   const panel = document.getElementById("panel");
   const panelResizeHandle = document.getElementById("panelResizeHandle");
   const viewport = document.getElementById("viewport");
+  const bevPanel = document.getElementById("bevPanel");
+  const bevViews = document.getElementById("bevViews");
   const overlay = document.getElementById("overlay");
-  const PANEL_MIN_WIDTH = 300;
+  const PANEL_MIN_WIDTH = 630;
   const VIEWPORT_MIN_WIDTH = 320;
   const panelResizeState = { active: false, pointerId: null, startX: 0, startWidth: 0 };
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x06070a);
+
+  function makeAxisLabelSprite(label, colorHex) {
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return new THREE.Sprite();
+
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = colorHex;
+    ctx.font = "700 90px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, size * 0.5, size * 0.54);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(2.6, 2.6, 1);
+    sprite.renderOrder = 10;
+    return sprite;
+  }
 
   const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 800);
   camera.up.copy(VIEW_UP);
@@ -609,7 +757,16 @@
   const linacRoot = new THREE.Group();
   scene.add(linacRoot);
 
-  scene.add(new THREE.AxesHelper(10));
+  const sourceAxes = new THREE.AxesHelper(10);
+  scene.add(sourceAxes);
+
+  const sourceAxisLabelX = makeAxisLabelSprite("x", "#ff6f6f");
+  sourceAxisLabelX.position.set(11.4, 0, 0);
+  sourceAxes.add(sourceAxisLabelX);
+
+  const sourceAxisLabelY = makeAxisLabelSprite("y", "#8cfb8c");
+  sourceAxisLabelY.position.set(0, 11.4, 0);
+  sourceAxes.add(sourceAxisLabelY);
 
   // Beam axis line (moves with linacRoot).
   linacRoot.add(new THREE.Line(
@@ -806,7 +963,8 @@
 
   function getPanelMaxWidth() {
     const handleWidth = panelResizeHandle.getBoundingClientRect().width;
-    return Math.max(PANEL_MIN_WIDTH, app.clientWidth - VIEWPORT_MIN_WIDTH - handleWidth);
+    const rightPanelWidth = bevPanel ? bevPanel.getBoundingClientRect().width : 0;
+    return Math.max(PANEL_MIN_WIDTH, app.clientWidth - VIEWPORT_MIN_WIDTH - handleWidth - rightPanelWidth);
   }
 
   function setPanelWidth(widthPx) {
@@ -852,6 +1010,7 @@
   panelResizeHandle.addEventListener("lostpointercapture", onPanelResizeEnd);
 
   let built = { jaws: [], leaves: [], phasePlanes: [], phasePoints: [] };
+  const beamEyeState = { hitsByKey: Object.create(null) };
 
   function getLowestComponentZ() {
     const g = state.geom;
@@ -1166,6 +1325,112 @@
     return hits;
   }
 
+  function drawBeamEyeCanvas(canvas, hits) {
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const cssW = Math.max(1, Math.round(rect.width));
+    const cssH = Math.max(1, Math.round(rect.height));
+    if (cssW <= 1 || cssH <= 1) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const widthPx = Math.max(1, Math.round(cssW * dpr));
+    const heightPx = Math.max(1, Math.round(cssH * dpr));
+    if (canvas.width !== widthPx || canvas.height !== heightPx) {
+      canvas.width = widthPx;
+      canvas.height = heightPx;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    ctx.fillStyle = "rgba(7, 11, 17, 0.96)";
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const pad = 12;
+    const plotSize = Math.max(1, Math.min(cssW - 2 * pad, cssH - 2 * pad));
+    const left = (cssW - plotSize) * 0.5;
+    const top = pad;
+    const right = left + plotSize;
+    const bottom = top + plotSize;
+    const midX = left + 0.5 * plotSize;
+    const midY = top + 0.5 * plotSize;
+
+    ctx.strokeStyle = "rgba(173, 208, 255, 0.45)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left, top, plotSize, plotSize);
+
+    ctx.strokeStyle = "rgba(173, 208, 255, 0.2)";
+    ctx.beginPath();
+    ctx.moveTo(left, midY);
+    ctx.lineTo(right, midY);
+    ctx.moveTo(midX, top);
+    ctx.lineTo(midX, bottom);
+    ctx.stroke();
+
+    const fontSize = Math.max(11, Math.round(plotSize * 0.08));
+    ctx.font = `700 ${fontSize}px sans-serif`;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ff7a7a";
+    ctx.textAlign = "right";
+    ctx.fillText("x", right - 3, midY);
+    ctx.fillStyle = "#8cfb8c";
+    ctx.textAlign = "left";
+    ctx.fillText("y", midX + 4, top + Math.max(8, fontSize * 0.45));
+
+    if (!Array.isArray(hits) || hits.length < 3) return;
+
+    const span = 2 * PLANE_HALF;
+    const dotSize = plotSize > 180 ? 1.5 : 1.1;
+    ctx.fillStyle = "#ff79f5";
+
+    for (let i = 0; i < hits.length; i += 3) {
+      const x = hits[i];
+      const y = hits[i + 1];
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+
+      const nx = (x + PLANE_HALF) / span;
+      const ny = (PLANE_HALF - y) / span;
+      if (nx < 0 || nx > 1 || ny < 0 || ny > 1) continue;
+
+      const px = left + nx * plotSize;
+      const py = top + ny * plotSize;
+      ctx.fillRect(px - dotSize * 0.5, py - dotSize * 0.5, dotSize, dotSize);
+    }
+  }
+
+  function updateBeamEyePanel() {
+    if (!bevViews) return;
+
+    let visibleCount = 0;
+    for (const meta of PHASE_SLIDER_META) {
+      const card = document.getElementById(meta.viewId);
+      const canvas = document.getElementById(meta.canvasId);
+      if (!card || !canvas) continue;
+
+      const isVisible = Boolean(state.phase[meta.visibleKey]);
+      card.classList.toggle("visible", isVisible);
+      if (!isVisible) continue;
+
+      visibleCount += 1;
+      drawBeamEyeCanvas(canvas, beamEyeState.hitsByKey[meta.key] || []);
+    }
+
+    bevViews.classList.remove("none-visible", "single-visible", "double-visible");
+    if (visibleCount === 0) bevViews.classList.add("none-visible");
+    else if (visibleCount === 1) bevViews.classList.add("single-visible");
+    else bevViews.classList.add("double-visible");
+
+    if (!bevPanel) return;
+    const shouldOpen = visibleCount > 0;
+    const wasOpen = !bevPanel.classList.contains("closed");
+    bevPanel.classList.toggle("closed", !shouldOpen);
+
+    if (shouldOpen !== wasOpen) requestAnimationFrame(resize);
+  }
+
   function rebuildPhaseSpaces() {
     built.phasePlanes.forEach(m => { phaseGroup.remove(m); disposeObject(m); });
     built.phasePoints.forEach(p => { phaseGroup.remove(p); disposeObject(p); });
@@ -1192,10 +1457,11 @@
       phaseGroup.add(pts);
       built.phasePoints.push(pts);
 
-      return hits.length;
+      return hits;
     }
 
     PHASE_SLIDER_META.forEach((meta) => {
+      beamEyeState.hitsByKey[meta.key] = null;
       const hitsEl = document.getElementById(meta.hitsId);
       if (hitsEl) hitsEl.textContent = "—";
       if (!state.phase[meta.visibleKey]) return;
@@ -1203,9 +1469,13 @@
       const zVal = Number(state.phase[meta.key]);
       if (!Number.isFinite(zVal)) return;
 
-      const hitCount = addPlane(zVal);
+      const hits = addPlane(zVal);
+      beamEyeState.hitsByKey[meta.key] = hits;
+      const hitCount = hits.length;
       if (hitsEl) hitsEl.textContent = String(hitCount);
     });
+
+    updateBeamEyePanel();
   }
 
   let pending = 0;
@@ -1265,8 +1535,24 @@
     { id: "jy_nb", axis: "y", key: "nb" },
   ];
   const PHASE_SLIDER_META = [
-    { id: "ps1", key: "z1", visibleId: "ps1_visible", visibleKey: "show1", hitsId: "ps1hits" },
-    { id: "ps2", key: "z2", visibleId: "ps2_visible", visibleKey: "show2", hitsId: "ps2hits" },
+    {
+      id: "ps1",
+      key: "z1",
+      visibleId: "ps1_visible",
+      visibleKey: "show1",
+      hitsId: "ps1hits",
+      viewId: "bev_ps1",
+      canvasId: "bev_canvas1",
+    },
+    {
+      id: "ps2",
+      key: "z2",
+      visibleId: "ps2_visible",
+      visibleKey: "show2",
+      hitsId: "ps2hits",
+      viewId: "bev_ps2",
+      canvasId: "bev_canvas2",
+    },
   ];
 
   const leafUI = {
@@ -1819,6 +2105,7 @@
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
+    updateBeamEyePanel();
   }
   window.addEventListener("resize", resize);
   window.addEventListener("load", () => {
